@@ -1,5 +1,6 @@
 azure-functions==1.16.0
 openai==1.72.0
-langchain==0.3.23
+
 # Optionally include langsmith if available:
 langsmith==0.3.30
+langchain==0.3.23
