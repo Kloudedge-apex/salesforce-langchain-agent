@@ -1,0 +1,62 @@
+<aura:component controller="EmailGeneratorController" implements="flexipage:availableForAllPageTypes,force:hasRecordId">
+    <aura:attribute name="recordId" type="String" />
+    <aura:attribute name="recordType" type="String" />
+    <aura:attribute name="emailDraft" type="String" />
+    <aura:attribute name="isLoading" type="Boolean" default="false" />
+    <aura:attribute name="error" type="String" />
+    
+    <aura:handler name="init" value="{!this}" action="{!c.doInit}" />
+    
+    <div class="slds-card">
+        <div class="slds-card__header slds-grid">
+            <header>
+                <h2>
+                    <span class="slds-text-heading_medium">AI Email Generator</span>
+                </h2>
+            </header>
+            <div class="slds-no-flex">
+                <lightning:button 
+                    label="Generate Email" 
+                    onclick="{!c.generateEmail}" 
+                    variant="brand" 
+                    disabled="{!v.isLoading}" />
+            </div>
+        </div>
+        
+        <div class="slds-card__body slds-card__body_inner">
+            <aura:if isTrue="{!v.isLoading}">
+                <div class="slds-is-relative slds-p-around_medium">
+                    <lightning:spinner alternativeText="Loading" size="medium"></lightning:spinner>
+                </div>
+            </aura:if>
+            
+            <aura:if isTrue="{!v.error}">
+                <div class="slds-notify slds-notify_alert slds-theme_alert-texture slds-theme_error" role="alert">
+                    <span class="slds-assistive-text">error</span>
+                    <h2>{!v.error}</h2>
+                </div>
+            </aura:if>
+            
+            <aura:if isTrue="{!v.emailDraft}">
+                <div class="slds-form-element">
+                    <label class="slds-form-element__label" for="emailDraft">Generated Email Draft</label>
+                    <div class="slds-form-element__control">
+                        <textarea 
+                            id="emailDraft" 
+                            class="slds-textarea" 
+                            value="{!v.emailDraft}" 
+                            rows="10" 
+                            readonly="true"></textarea>
+                    </div>
+                </div>
+                
+                <div class="slds-m-top_medium">
+                    <lightning:button 
+                        label="Copy to Clipboard" 
+                        onclick="{!c.copyToClipboard}" 
+                        variant="neutral" />
+                </div>
+            </aura:if>
+        </div>
+    </div>
+</aura:component> 

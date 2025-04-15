@@ -11,7 +11,7 @@ except ImportError:
     pass  # In production, Application Settings are used.
 
 # Import the OpenAI LLM from LangChain v0.3.23.
-from langchain.llms import OpenAI
+from langchain_community.llms import OpenAI
 
 # Attempt to import LangSmith tracer from LangChain.
 try:
@@ -148,10 +148,13 @@ if __name__ == '__main__':
     # Create sample data including optional feedback.
     sample_data = json.dumps({
         "firstName": "Alice",
-        "email": "alice@example.com",
-        # "feedback": {"score": 0.5, "comment": "The draft needs more details."}
+        "feedback": {"score": 1.0, "comment": "Great result"}
     })
-    dummy_req = DummyHttpRequest(sample_data)
-    response = main(dummy_req)
-    print("Status Code:", response.status_code)
-    print("Response Body:", response.get_body().decode("utf-8"))
+    
+    # Create a dummy request and process it.
+    dummy_request = DummyHttpRequest(sample_data)
+    response = main(dummy_request)
+    
+    # Print the response.
+    print(f"Status Code: {response.status_code}")
+    print(f"Response Body: {response.get_body().decode('utf-8')}") 
