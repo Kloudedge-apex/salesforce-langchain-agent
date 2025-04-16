@@ -2,8 +2,9 @@ from flask import Flask, request, jsonify
 import os
 import json
 import logging
+import re
 from dotenv import load_dotenv
-from langchain_community.llms import OpenAI
+from openai import AzureOpenAI
 
 # Load environment variables from .env file
 load_dotenv()
@@ -13,6 +14,25 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+def convert_to_html(text):
+    """Convert markdown-like text to HTML"""
+    # Replace markdown headers
+    html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
+    
+    # Replace markdown links
+    html = re.sub(r'\[(.*?)\]\((.*?)\)', r'<a href="\2">\1</a>', html)
+    
+    # Replace newlines with <br> tags
+    html = html.replace('\n', '<br>')
+    
+    # Replace double <br> with paragraph breaks
+    html = html.replace('<br><br>', '</p><p>')
+    
+    # Wrap in paragraph tags
+    html = f'<p>{html}</p>'
+    
+    return html
 
 @app.route('/generate_email', methods=['POST'])
 def generate_email():
@@ -38,31 +58,30 @@ def generate_email():
     first_name = req_body.get("firstName", "Valued Customer")
     company = req_body.get("company", "")
     email = req_body.get("email", "")
+    feedback = req_body.get("feedback", {})
+    format_type = req_body.get("format", "text")  # Default to text format
     
     # Retrieve Azure OpenAI configuration from environment variables
     azure_openai_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
     azure_openai_key = os.environ.get("AZURE_OPENAI_KEY")
-    azure_openai_api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+    azure_openai_api_version = os.environ.get("AZURE_OPENAI_API_VERSION")
     azure_openai_deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4")
     
-    if not (azure_openai_endpoint and azure_openai_key):
+    if not all([azure_openai_endpoint, azure_openai_key, azure_openai_api_version]):
         error_msg = "Missing required environment variables for Azure OpenAI configuration."
         logger.error(error_msg)
         return jsonify({"error": error_msg}), 500
     
-    # Instantiate the LLM using the OpenAI class
+    # Initialize Azure OpenAI client
     try:
-        llm = OpenAI(
-            deployment_name=azure_openai_deployment,
-            openai_api_base=azure_openai_endpoint,
-            openai_api_key=azure_openai_key,
-            openai_api_version=azure_openai_api_version,
-            temperature=0.7,
-            max_tokens=150
+        client = AzureOpenAI(
+            api_key=azure_openai_key,
+            api_version=azure_openai_api_version,
+            azure_endpoint=azure_openai_endpoint
         )
     except Exception as e:
-        logger.error(f"Error instantiating OpenAI LLM: {e}", exc_info=True)
-        return jsonify({"error": "Failed to initialize LLM.", "details": str(e)}), 500
+        logger.error(f"Error initializing Azure OpenAI client: {e}", exc_info=True)
+        return jsonify({"error": "Failed to initialize Azure OpenAI client.", "details": str(e)}), 500
     
     # Build the prompt for generating the email draft
     prompt = (
@@ -77,9 +96,27 @@ def generate_email():
         "for further discussion. Ensure the tone is friendly and professional."
     )
     
+    # Add feedback information if available
+    if feedback and isinstance(feedback, dict):
+        score = feedback.get("score")
+        comment = feedback.get("comment")
+        if score is not None:
+            prompt += f" The customer provided a feedback score of {score} out of 5."
+        if comment:
+            prompt += f" Their comment was: '{comment}'"
+    
     # Generate the email draft
     try:
-        email_draft = llm(prompt)
+        response = client.chat.completions.create(
+            model=azure_openai_deployment,
+            messages=[
+                {"role": "system", "content": "You are a professional email writer for a sales team. Create concise, personalized emails that maintain a professional tone while being friendly and engaging. Include a clear call to action."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=300
+        )
+        email_draft = response.choices[0].message.content
         if not email_draft:
             raise ValueError("Received an empty response from the LLM.")
         logger.info("Email draft generated successfully.")
@@ -89,6 +126,11 @@ def generate_email():
     
     # Return the generated email draft
     result = {"emailDraft": email_draft}
+    
+    # Add HTML version if requested
+    if format_type == "html":
+        result["emailDraftHtml"] = convert_to_html(email_draft)
+    
     return jsonify(result), 200
 
 @app.route('/health', methods=['GET'])
@@ -98,4 +140,4 @@ def health_check():
 
 if __name__ == '__main__':
     # For local development
-    app.run(debug=True, host='0.0.0.0', port=5000) 
+    app.run(debug=True, host='0.0.0.0', port=5001) 
