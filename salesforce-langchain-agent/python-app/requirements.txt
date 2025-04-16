@@ -4,6 +4,8 @@ flask==2.3.3
 python-dotenv==1.0.0
 gunicorn==21.2.0
 requests==2.31.0
+Werkzeug==2.3.7
+pytest==7.4.0
 
 # LangChain and related packages
 langchain>=0.1.0

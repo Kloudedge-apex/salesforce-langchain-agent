@@ -2,12 +2,20 @@ import requests
 import json
 import os
 from dotenv import load_dotenv
+import pytest
+from app import app
 
 # Load environment variables
 load_dotenv()
 
 # API endpoint
 API_URL = "http://localhost:5000/generate_email"
+
+@pytest.fixture
+def client():
+    app.config['TESTING'] = True
+    with app.test_client() as client:
+        yield client
 
 def test_email_generation():
     """Test the email generation endpoint"""
@@ -58,6 +66,23 @@ def test_health_check():
     
     except Exception as e:
         print(f"Error making health check request: {e}")
+
+def test_health_endpoint(client):
+    """Test the health check endpoint"""
+    response = client.get('/health')
+    assert response.status_code == 200
+    assert response.json == {"status": "healthy"}
+
+def test_generate_email_endpoint(client):
+    """Test the email generation endpoint with basic input"""
+    test_data = {
+        "firstName": "Test",
+        "company": "Test Company",
+        "email": "test@test.com"
+    }
+    response = client.post('/generate_email', json=test_data)
+    assert response.status_code == 500  # Will be 500 without Azure OpenAI credentials
+    assert "error" in response.json  # Should contain error message about missing credentials
 
 if __name__ == "__main__":
     print("Starting API tests...")
