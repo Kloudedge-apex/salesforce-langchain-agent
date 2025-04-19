@@ -3,6 +3,8 @@ import os
 import json
 import logging
 import re
+import sys
+import platform
 from dotenv import load_dotenv
 from openai import AzureOpenAI
 
@@ -150,9 +152,59 @@ def home():
         "status": "running",
         "endpoints": {
             "health": "/health",
-            "generate_email": "/generate_email"
+            "generate_email": "/generate_email",
+            "diagnostic": "/diagnostic"
         }
     }), 200
+
+@app.route('/diagnostic', methods=['GET'])
+def diagnostic():
+    """Diagnostic endpoint to help troubleshoot issues"""
+    try:
+        # System information
+        system_info = {
+            "python_version": sys.version,
+            "platform": platform.platform(),
+            "cwd": os.getcwd(),
+            "files": os.listdir("."),
+            "env_vars": {k: v for k, v in os.environ.items() if not k.lower().contains("key") and not k.lower().contains("secret")}
+        }
+        
+        # Check if required packages are installed
+        try:
+            import openai
+            openai_version = openai.__version__
+        except ImportError:
+            openai_version = "Not installed"
+        
+        try:
+            import flask
+            flask_version = flask.__version__
+        except ImportError:
+            flask_version = "Not installed"
+        
+        try:
+            import gunicorn
+            gunicorn_version = gunicorn.__version__
+        except ImportError:
+            gunicorn_version = "Not installed"
+        
+        packages = {
+            "openai": openai_version,
+            "flask": flask_version,
+            "gunicorn": gunicorn_version
+        }
+        
+        return jsonify({
+            "status": "diagnostic",
+            "system_info": system_info,
+            "packages": packages
+        }), 200
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
 
 if __name__ == '__main__':
     # For local development
