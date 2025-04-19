@@ -84,7 +84,8 @@ def generate_email():
         client = AzureOpenAI(
             api_key=azure_openai_key,
             api_version=azure_openai_api_version,
-            azure_endpoint=azure_openai_endpoint
+            azure_endpoint=azure_openai_endpoint,
+            default_headers={"Accept": "application/json"}
         )
     except Exception as e:
         logger.error(f"Error initializing Azure OpenAI client: {e}", exc_info=True)
@@ -167,7 +168,7 @@ def diagnostic():
             "platform": platform.platform(),
             "cwd": os.getcwd(),
             "files": os.listdir("."),
-            "env_vars": {k: v for k, v in os.environ.items() if not k.lower().contains("key") and not k.lower().contains("secret")}
+            "env_vars": {k: v for k, v in os.environ.items() if "key" not in k.lower() and "secret" not in k.lower()}
         }
         
         # Check if required packages are installed
