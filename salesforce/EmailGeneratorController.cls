@@ -6,8 +6,27 @@
  */
 public with sharing class EmailGeneratorController {
     
-    // API endpoint URL - should be configured in Custom Setting or Custom Metadata
-    private static final String API_ENDPOINT = 'http://localhost:5000/generate_email';
+    // Get API configuration from Custom Metadata Type
+    private static EmailGeneratorSettings__mdt getSettings() {
+        EmailGeneratorSettings__mdt[] settings = [
+            SELECT API_Endpoint__c, API_Key__c, Timeout_ms__c 
+            FROM EmailGeneratorSettings__mdt 
+            WHERE DeveloperName = 'Default' 
+            LIMIT 1
+        ];
+        
+        if (settings.isEmpty()) {
+            throw new AuraHandledException('Email Generator Settings not configured');
+        }
+        
+        // Ensure HTTPS is enforced
+        String endpoint = settings[0].API_Endpoint__c;
+        if (!endpoint.startsWith('https://')) {
+            throw new AuraHandledException('API Endpoint must use HTTPS');
+        }
+        
+        return settings[0];
+    }
     
     /**
      * Generates an email draft for a Lead record
@@ -129,25 +148,98 @@ public with sharing class EmailGeneratorController {
      * @param payload JSON string containing the request payload
      * @return String containing the API response
      */
+    private static final Integer MAX_RETRIES = 3;
+    private static final Integer RETRY_DELAY_MS = 1000; // 1 second
+    
+    /**
+     * Makes an HTTP callout to the API endpoint with retry logic
+     * @param payload JSON string containing the request payload
+     * @return String containing the API response
+     */
     private static String makeApiCallout(String payload) {
-        // Create the HTTP request
-        Http http = new Http();
-        HttpRequest request = new HttpRequest();
-        request.setEndpoint(API_ENDPOINT);
-        request.setMethod('POST');
-        request.setHeader('Content-Type', 'application/json');
-        request.setBody(payload);
-        request.setTimeout(120000); // 2-minute timeout
+        // Get settings
+        EmailGeneratorSettings__mdt settings = getSettings();
         
-        // Send the request and get the response
-        HttpResponse response = http.send(request);
+        // Initialize retry counter
+        Integer retryCount = 0;
+        Exception lastException;
         
-        // Check if the request was successful
-        if (response.getStatusCode() == 200) {
-            return response.getBody();
-        } else {
-            throw new AuraHandledException('API callout failed with status code: ' + response.getStatusCode() + 
-                                          ', Response: ' + response.getBody());
+        while (retryCount < MAX_RETRIES) {
+            try {
+                // Create the HTTP request
+                Http http = new Http();
+                HttpRequest request = new HttpRequest();
+                request.setEndpoint(settings.API_Endpoint__c);
+                request.setMethod('POST');
+                request.setHeader('Content-Type', 'application/json');
+                request.setHeader('x-api-key', settings.API_Key__c);
+                request.setBody(payload);
+                request.setTimeout(Integer.valueOf(settings.Timeout_ms__c));
+                
+                // Send the request and get the response
+                HttpResponse response = http.send(request);
+                Integer statusCode = response.getStatusCode();
+                
+                // Handle different response scenarios
+                if (statusCode == 200) {
+                    return response.getBody();
+                } else if (statusCode == 401) {
+                    System.debug(LoggingLevel.ERROR, 'API authentication failed');
+                    throw new AuraHandledException('Authentication failed. Please check API configuration.');
+                } else if (statusCode == 429) {
+                    // Rate limit hit - wait and retry
+                    if (retryCount < MAX_RETRIES - 1) {
+                        System.debug(LoggingLevel.WARN, 'Rate limit hit, waiting before retry...');
+                        sleep(RETRY_DELAY_MS * (retryCount + 1)); // Exponential backoff
+                        retryCount++;
+                        continue;
+                    } else {
+                        throw new AuraHandledException('Service is currently busy. Please try again later.');
+                    }
+                } else {
+                    // Log the error but don't expose detailed error message to users
+                    System.debug(LoggingLevel.ERROR, 'API callout failed. Status: ' + statusCode + 
+                               ', Response: ' + response.getBody());
+                    
+                    // Retry on 5xx errors
+                    if (statusCode >= 500 && retryCount < MAX_RETRIES - 1) {
+                        System.debug(LoggingLevel.WARN, 'Server error, retrying...');
+                        sleep(RETRY_DELAY_MS * (retryCount + 1));
+                        retryCount++;
+                        continue;
+                    }
+                    
+                    throw new AuraHandledException('Failed to generate email draft. Please try again later.');
+                }
+            } catch (System.CalloutException e) {
+                lastException = e;
+                if (retryCount < MAX_RETRIES - 1) {
+                    System.debug(LoggingLevel.WARN, 'Callout failed, retrying... Error: ' + e.getMessage());
+                    sleep(RETRY_DELAY_MS * (retryCount + 1));
+                    retryCount++;
+                    continue;
+                }
+            }
+        }
+        
+        // If we get here, all retries failed
+        System.debug(LoggingLevel.ERROR, 'All retry attempts failed. Last error: ' + lastException?.getMessage());
+        throw new AuraHandledException('Unable to connect to email generation service. Please try again later.');
+    }
+    
+    /**
+     * Utility method to pause execution
+     * @param milliseconds The number of milliseconds to wait
+     */
+    private static void sleep(Integer milliseconds) {
+        Long startTime = System.currentTimeMillis();
+        while (System.currentTimeMillis() - startTime < milliseconds) {
+            // Simulate sleep in Apex
+            continue;
         }
     }
 } 
+
+
+
+

@@ -2,6 +2,8 @@ import logging
 import os
 import json
 import azure.functions as func
+from time import time
+from collections import defaultdict
 
 # For local development, load environment variables from a .env file if available.
 try:
@@ -25,9 +27,58 @@ try:
 except ImportError:
     LangSmithClient = None
 
+# Simple rate limiter using in-memory storage
+# In production, use Redis or similar for distributed rate limiting
+class RateLimiter:
+    def __init__(self, requests_per_minute=60):
+        self.requests_per_minute = requests_per_minute
+        self.requests = defaultdict(list)
+        
+    def is_allowed(self, api_key: str) -> bool:
+        now = time()
+        minute_ago = now - 60
+        
+        # Clean up old requests
+        self.requests[api_key] = [req_time for req_time in self.requests[api_key] if req_time > minute_ago]
+        
+        # Check if under limit
+        if len(self.requests[api_key]) < self.requests_per_minute:
+            self.requests[api_key].append(now)
+            return True
+        return False
+
+# Initialize rate limiter
+rate_limiter = RateLimiter(requests_per_minute=int(os.environ.get("RATE_LIMIT_PER_MINUTE", "60")))
+
+def validate_api_key(req: func.HttpRequest) -> bool:
+    """Validate the API key from the request header."""
+    expected_key = os.environ.get("API_KEY")
+    if not expected_key:
+        logging.error("API_KEY environment variable not configured")
+        return False
+        
+    request_key = req.headers.get("x-api-key")
+    return request_key == expected_key
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Processing HTTP request for email draft generation with LangChain and LangSmith.")
+    
+    # Validate API key
+    api_key = req.headers.get("x-api-key")
+    if not validate_api_key(req):
+        return func.HttpResponse(
+            json.dumps({"error": "Unauthorized"}),
+            status_code=401,
+            mimetype="application/json"
+        )
+    
+    # Check rate limit
+    if not rate_limiter.is_allowed(api_key):
+        return func.HttpResponse(
+            json.dumps({"error": "Rate limit exceeded. Please try again later."}),
+            status_code=429,
+            mimetype="application/json"
+        )
 
     # Parse the incoming JSON payload.
     try:
@@ -45,7 +96,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     # Retrieve Azure OpenAI configuration from environment variables.
     azure_openai_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
     azure_openai_key = os.environ.get("AZURE_OPENAI_KEY")
-    azure_openai_api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+    azure_openai_api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2023-12-01-preview")
     azure_openai_deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4")
 
     if not (azure_openai_endpoint and azure_openai_key):
@@ -158,3 +209,5 @@ if __name__ == '__main__':
     # Print the response.
     print(f"Status Code: {response.status_code}")
     print(f"Response Body: {response.get_body().decode('utf-8')}") 
+
+

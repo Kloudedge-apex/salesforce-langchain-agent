@@ -6,7 +6,7 @@ import re
 from dotenv import load_dotenv
 from openai import AzureOpenAI
 
-# Load environment variables from .env file
+# Load environment variables from .env file if it exists
 load_dotenv()
 
 # Configure logging
@@ -66,6 +66,11 @@ def generate_email():
     azure_openai_key = os.environ.get("AZURE_OPENAI_KEY")
     azure_openai_api_version = os.environ.get("AZURE_OPENAI_API_VERSION")
     azure_openai_deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4")
+    
+    # Log environment variables (without sensitive information)
+    logger.info(f"Azure OpenAI Endpoint: {azure_openai_endpoint}")
+    logger.info(f"Azure OpenAI API Version: {azure_openai_api_version}")
+    logger.info(f"Azure OpenAI Deployment: {azure_openai_deployment}")
     
     if not all([azure_openai_endpoint, azure_openai_key, azure_openai_api_version]):
         error_msg = "Missing required environment variables for Azure OpenAI configuration."
@@ -138,6 +143,18 @@ def health_check():
     """Simple health check endpoint"""
     return jsonify({"status": "healthy"}), 200
 
+@app.route('/', methods=['GET'])
+def home():
+    """Home endpoint"""
+    return jsonify({
+        "status": "running",
+        "endpoints": {
+            "health": "/health",
+            "generate_email": "/generate_email"
+        }
+    }), 200
+
 if __name__ == '__main__':
     # For local development
-    app.run(debug=True, host='0.0.0.0', port=5001) 
+    port = int(os.environ.get("PORT", 5001))
+    app.run(debug=True, host='0.0.0.0', port=port) 
