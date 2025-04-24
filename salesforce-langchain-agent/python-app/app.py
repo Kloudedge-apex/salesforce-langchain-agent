@@ -6,16 +6,31 @@ import re
 import sys
 import platform
 from dotenv import load_dotenv
-from openai import AzureOpenAI
+from openai import AzureOpenAI, APIError
 
 # Load environment variables from .env file if it exists
 load_dotenv()
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Initialize Azure OpenAI client at the application level
+try:
+    client = AzureOpenAI(
+        api_key=os.environ.get("AZURE_OPENAI_KEY"),
+        api_version=os.environ.get("AZURE_OPENAI_API_VERSION"),
+        azure_endpoint=os.environ.get("AZURE_OPENAI_ENDPOINT")
+    )
+    logger.info("Azure OpenAI client initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize Azure OpenAI client: {e}", exc_info=True)
+    client = None
 
 def convert_to_html(text):
     """Convert markdown-like text to HTML"""
@@ -48,14 +63,19 @@ def generate_email():
         "feedback": {"score": 1.0, "comment": "Great result"}  # Optional
     }
     """
+    if client is None:
+        return jsonify({"error": "Azure OpenAI client not properly initialized"}), 500
+
     logger.info("Processing request for email draft generation")
     
     # Parse the incoming JSON payload
     try:
         req_body = request.get_json()
+        if not req_body:
+            raise ValueError("Empty request body")
     except Exception as e:
         logger.error(f"Invalid JSON payload: {e}")
-        return jsonify({"error": "Invalid JSON payload."}), 400
+        return jsonify({"error": "Invalid JSON payload", "details": str(e)}), 400
     
     first_name = req_body.get("firstName", "Valued Customer")
     company = req_body.get("company", "")
@@ -63,42 +83,12 @@ def generate_email():
     feedback = req_body.get("feedback", {})
     format_type = req_body.get("format", "text")  # Default to text format
     
-    # Retrieve Azure OpenAI configuration from environment variables
-    azure_openai_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
-    azure_openai_key = os.environ.get("AZURE_OPENAI_KEY")
-    azure_openai_api_version = os.environ.get("AZURE_OPENAI_API_VERSION")
     azure_openai_deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4")
     
-    # Log environment variables (without sensitive information)
-    logger.info(f"Azure OpenAI Endpoint: {azure_openai_endpoint}")
-    logger.info(f"Azure OpenAI API Version: {azure_openai_api_version}")
-    logger.info(f"Azure OpenAI Deployment: {azure_openai_deployment}")
-    
-    if not all([azure_openai_endpoint, azure_openai_key, azure_openai_api_version]):
-        error_msg = "Missing required environment variables for Azure OpenAI configuration."
-        logger.error(error_msg)
-        return jsonify({"error": error_msg}), 500
-    
-    # Initialize Azure OpenAI client
-    try:
-        client = AzureOpenAI(
-            api_key=azure_openai_key,
-            api_version=azure_openai_api_version,
-            azure_endpoint=azure_openai_endpoint,
-            default_headers={"Accept": "application/json"}
-        )
-    except Exception as e:
-        logger.error(f"Error initializing Azure OpenAI client: {e}", exc_info=True)
-        return jsonify({"error": "Failed to initialize Azure OpenAI client.", "details": str(e)}), 500
-    
     # Build the prompt for generating the email draft
-    prompt = (
-        f"Compose a professional email addressed to {first_name}"
-    )
-    
+    prompt = f"Compose a professional email addressed to {first_name}"
     if company:
         prompt += f" from {company}"
-    
     prompt += (
         ", thanking them for their interest in our services and inviting them to schedule a meeting "
         "for further discussion. Ensure the tone is friendly and professional."
@@ -124,13 +114,22 @@ def generate_email():
             temperature=0.7,
             max_tokens=300
         )
+        
+        if not response.choices:
+            raise ValueError("No response choices returned from the API")
+            
         email_draft = response.choices[0].message.content
         if not email_draft:
-            raise ValueError("Received an empty response from the LLM.")
-        logger.info("Email draft generated successfully.")
+            raise ValueError("Received an empty response from the LLM")
+            
+        logger.info("Email draft generated successfully")
+        
+    except APIError as e:
+        logger.error(f"Azure OpenAI API error: {e}", exc_info=True)
+        return jsonify({"error": "Azure OpenAI API error", "details": str(e)}), 500
     except Exception as e:
         logger.error(f"Error generating email draft: {e}", exc_info=True)
-        return jsonify({"error": "Failed to generate email draft.", "details": str(e)}), 500
+        return jsonify({"error": "Failed to generate email draft", "details": str(e)}), 500
     
     # Return the generated email draft
     result = {"emailDraft": email_draft}

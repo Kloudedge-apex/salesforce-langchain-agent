@@ -1,0 +1,22 @@
+.THIS {
+    position: relative;
+}
+
+.THIS .slds-textarea {
+    min-height: 200px;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.THIS .slds-notify_alert {
+    margin-bottom: 1rem;
+}
+
+.THIS .slds-card__header {
+    padding: 1rem;
+    border-bottom: 1px solid #dddbda;
+}
+
+.THIS .slds-card__body {
+    padding: 1rem;
+} 

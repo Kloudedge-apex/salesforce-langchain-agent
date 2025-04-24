@@ -1,0 +1,11 @@
+<aura:documentation>
+    <aura:description>
+        <p>An AI-powered email generator component that creates personalized email drafts for Leads and Opportunities.</p>
+        <p>Features:</p>
+        <ul>
+            <li>Generates personalized email drafts based on Lead or Opportunity data</li>
+            <li>Supports copying the generated email to clipboard</li>
+            <li>Shows loading state and error messages</li>
+        </ul>
+    </aura:description>
+</aura:documentation> 
