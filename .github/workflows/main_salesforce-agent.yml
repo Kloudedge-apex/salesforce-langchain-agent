@@ -29,9 +29,12 @@ jobs:
         python-version: ${{ env.PYTHON_VERSION }}
         cache: 'pip'
 
-    - name: Create virtual environment
+    - name: Create and set up virtual environment
       run: |
+        mkdir -p venv
+        chmod -R 777 venv
         python -m venv venv
+        ls -la venv/bin
         source venv/bin/activate
         which python
         python --version
