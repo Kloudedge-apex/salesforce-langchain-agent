@@ -22,14 +22,26 @@ jobs:
       with:
         python-version: ${{ env.PYTHON_VERSION }}
 
+    - name: Setup Python Virtual Environment
+      run: |
+        VENV_PATH="${GITHUB_WORKSPACE}/venv"
+        echo "Creating virtual environment at ${VENV_PATH}"
+        python -m pip install --upgrade pip virtualenv
+        python -m virtualenv "${VENV_PATH}"
+        source "${VENV_PATH}/bin/activate"
+        python --version
+        pip --version
+
     - name: Install dependencies
       run: |
+        source "${GITHUB_WORKSPACE}/venv/bin/activate"
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install gunicorn
 
     - name: Create deployment package
       run: |
+        source "${GITHUB_WORKSPACE}/venv/bin/activate"
         echo "Installing production dependencies..."
         pip freeze > requirements.txt
         
@@ -42,7 +54,8 @@ jobs:
           -x "*.pyc" \
           -x "*.env*" \
           -x "*.vscode*" \
-          -x "*.idea*"
+          -x "*.idea*" \
+          -x "venv/*"
 
     - name: Deploy to Azure Web App
       uses: azure/webapps-deploy@v3
